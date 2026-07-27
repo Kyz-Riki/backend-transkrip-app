@@ -26,6 +26,8 @@ INSTRUKSI:
 3. Jika transkrip dalam Bahasa Inggris, tetap tulis ringkasan dalam Bahasa Indonesia.
 4. Jangan menambahkan informasi yang tidak ada di transkrip.
 5. Gunakan bahasa yang jelas dan mudah dipahami.
+6. jawaban langsung to the point langsung kasih judul, point penting, ringkasanaja gausah ada kalimat seperti berikut adalah ringkasan blablabla
+7. jika video tersebut ada sponsor, jangan diringkas bagian sponsornya, kamu bisa skip aja pada bagian sponsor.
 """
 
 
