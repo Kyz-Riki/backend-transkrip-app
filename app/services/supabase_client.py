@@ -44,8 +44,33 @@ def login_user(email: str, password: str):
     return client.auth.sign_in_with_password({"email": email, "password": password})
 
 
+import jwt
+
+
+class SimpleUser:
+    def __init__(self, user_id: str, email: str = ""):
+        self.id = user_id
+        self.email = email
+
+
 def get_user_from_token(token: str) -> Any | None:
-    """Verify JWT access token and return user object."""
+    """Verify JWT access token (locally using SUPABASE_JWT_SECRET if provided, fallback to Supabase API) and return user object."""
+    jwt_secret = settings.SUPABASE_JWT_SECRET.strip()
+    if jwt_secret:
+        try:
+            payload = jwt.decode(
+                token,
+                jwt_secret,
+                algorithms=["HS256"],
+                options={"verify_aud": False},
+            )
+            user_id = payload.get("sub")
+            email = payload.get("email", "")
+            if user_id:
+                return SimpleUser(user_id=user_id, email=email)
+        except Exception as e:
+            logger.warning(f"Verifikasi lokal JWT (SUPABASE_JWT_SECRET) gagal: {str(e)}. Fallback ke Supabase API.")
+
     client = get_supabase_client()
     if not client:
         return None

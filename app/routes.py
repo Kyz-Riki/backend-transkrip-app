@@ -1,5 +1,6 @@
 from typing import Any
 from fastapi import APIRouter, HTTPException, Depends, status
+from gotrue.errors import AuthApiError
 
 from app.schemas import (
     RegisterRequest,
@@ -48,14 +49,28 @@ async def register(request: RegisterRequest):
                 detail="Gagal melakukan pendaftaran. Silakan periksa email/password.",
             )
         
-        access_token = res.session.access_token if res.session else ""
-        refresh_token = res.session.refresh_token if res.session else None
+        has_session = res.session is not None
+        access_token = res.session.access_token if has_session else None
+        refresh_token = res.session.refresh_token if has_session else None
         
+        msg = "Registrasi berhasil." if has_session else "Registrasi berhasil. Silakan cek email Anda jika verifikasi email diaktifkan pada Supabase."
+
         return AuthResponse(
             access_token=access_token,
             refresh_token=refresh_token,
             user=UserResponse(id=res.user.id, email=res.user.email or request.email),
+            message=msg,
         )
+    except AuthApiError as e:
+        msg_str = str(e)
+        if "User already registered" in msg_str:
+            raise HTTPException(status_code=400, detail="Email sudah terdaftar. Silakan login.")
+        elif "rate limit" in msg_str.lower():
+            raise HTTPException(status_code=429, detail="Terlalu banyak percobaan registrasi (Rate Limit Supabase). Silakan tunggu beberapa menit.")
+        elif "invalid" in msg_str.lower() and "email" in msg_str.lower():
+            raise HTTPException(status_code=400, detail=f"Email tidak valid / dilarang Supabase: {msg_str}")
+        else:
+            raise HTTPException(status_code=400, detail=msg_str)
     except HTTPException:
         raise
     except Exception as e:
@@ -81,7 +96,16 @@ async def login(request: LoginRequest):
             access_token=res.session.access_token,
             refresh_token=res.session.refresh_token,
             user=UserResponse(id=res.user.id, email=res.user.email or request.email),
+            message="Login berhasil.",
         )
+    except AuthApiError as e:
+        msg_str = str(e)
+        if "Invalid login credentials" in msg_str:
+            raise HTTPException(status_code=401, detail="Email atau password salah.")
+        elif "Email not confirmed" in msg_str:
+            raise HTTPException(status_code=401, detail="Email Anda belum dikonfirmasi. Silakan periksa email Anda.")
+        else:
+            raise HTTPException(status_code=400, detail=msg_str)
     except HTTPException:
         raise
     except Exception as e:

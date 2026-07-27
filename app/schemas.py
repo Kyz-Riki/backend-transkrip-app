@@ -18,10 +18,11 @@ class UserResponse(BaseModel):
 
 
 class AuthResponse(BaseModel):
-    access_token: str = Field(description="JWT Access Token dari Supabase")
+    access_token: str | None = Field(default=None, description="JWT Access Token dari Supabase")
     refresh_token: str | None = Field(default=None, description="JWT Refresh Token")
     token_type: str = Field(default="bearer", description="Tipe token HTTP Auth")
     user: UserResponse = Field(description="Data profil user yang login")
+    message: str | None = Field(default=None, description="Pesan informasi opsional")
 
 
 # Summary Schemas
