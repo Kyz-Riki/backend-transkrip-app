@@ -20,6 +20,7 @@ from app.services.summarizer import summarize_transcript
 from app.services.supabase_client import (
     register_user,
     login_user,
+    logout_user,
     get_summary_by_video_id,
     save_summary,
     assign_summary_to_user,
@@ -127,6 +128,20 @@ async def get_me(current_user: Any = Depends(get_current_user)):
         id=current_user.id,
         email=current_user.email or "",
     )
+
+
+@router.post(
+    "/auth/logout",
+    summary="Logout user",
+    description="Menghapus session user yang sedang login di Supabase Auth.",
+    tags=["Auth"],
+)
+async def logout(current_user: Any = Depends(get_current_user)):
+    try:
+        logout_user()
+        return {"message": "Logout berhasil."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Gagal logout: {str(e)}")
 
 
 # --------------------------------------------------------------------------

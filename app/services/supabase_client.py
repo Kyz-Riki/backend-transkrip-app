@@ -44,6 +44,14 @@ def login_user(email: str, password: str):
     return client.auth.sign_in_with_password({"email": email, "password": password})
 
 
+def logout_user() -> None:
+    """Sign out current user session from Supabase Auth."""
+    client = get_supabase_client()
+    if not client:
+        raise RuntimeError("Supabase client belum dikonfigurasi.")
+    client.auth.sign_out()
+
+
 import jwt
 
 
