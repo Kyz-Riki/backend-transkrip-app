@@ -26,6 +26,7 @@ from app.services.supabase_client import (
     save_summary,
     save_summary_for_user,
     assign_summary_to_user,
+    unassign_summary_from_user,
     get_all_summaries,
 )
 
@@ -286,16 +287,15 @@ async def save_summary_to_user_account(
 @router.get(
     "/history",
     response_model=HistoryResponse,
-    summary="Daftar histori ringkasan",
-    description="Mengambil daftar histori ringkasan video. Jika disertai Bearer Token, mengembalikan histori khusus milik user.",
+    summary="Daftar histori ringkasan milik user",
+    description="Mengambil daftar histori ringkasan video milik user yang sedang login. Wajib menyertakan Bearer Token.",
     tags=["Summaries"],
 )
 async def get_history(
     limit: int = 50,
-    current_user: Any | None = Depends(get_optional_current_user),
+    current_user: Any = Depends(get_current_user),
 ):
-    user_id = current_user.id if current_user else None
-    records = get_all_summaries(limit=limit, user_id=user_id)
+    records = get_all_summaries(limit=limit, user_id=current_user.id)
     items = [
         SummaryHistoryItem(
             id=str(r.get("id")) if r.get("id") else None,
@@ -346,6 +346,48 @@ async def get_summary_detail(
         owner_username=record.get("owner_username", "") or "",
         is_owner=is_owner,
     )
+
+
+@router.delete(
+    "/summaries/{video_id}",
+    summary="Hapus ringkasan dari akun user",
+    description="Melepas kepemilikan ringkasan dari akun user. "
+    "Row cache tetap tersimpan di database untuk digunakan ulang. "
+    "Hanya pemilik yang bisa menghapus.",
+    tags=["Summaries"],
+)
+async def delete_summary(
+    video_id: str,
+    current_user: Any = Depends(get_current_user),
+):
+    # Cek apakah record ada
+    record = get_summary_by_video_id(video_id, current_user.id)
+    if not record:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Ringkasan untuk video_id '{video_id}' tidak ditemukan.",
+        )
+
+    # Cek kepemilikan — hanya pemilik yang bisa hapus
+    owner_user_id = record.get("user_id")
+    if not owner_user_id or str(owner_user_id) != str(current_user.id):
+        raise HTTPException(
+            status_code=403,
+            detail="Anda tidak memiliki izin untuk menghapus ringkasan ini.",
+        )
+
+    # Lepas kepemilikan (set user_id = NULL), row cache tetap ada
+    result = unassign_summary_from_user(video_id, current_user.id)
+    if not result:
+        raise HTTPException(
+            status_code=500,
+            detail="Gagal menghapus ringkasan dari akun.",
+        )
+
+    return {
+        "message": "Ringkasan berhasil dihapus dari akun Anda.",
+        "video_id": video_id,
+    }
 
 
 @router.post(

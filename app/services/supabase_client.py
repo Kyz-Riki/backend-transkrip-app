@@ -289,3 +289,26 @@ def save_summary_for_user(
     return None
 
 
+def unassign_summary_from_user(video_id: str, user_id: str) -> dict[str, Any] | None:
+    """Release ownership of a summary by setting user_id and owner_username to NULL.
+
+    Row tetap ada di tabel sebagai cache konten. Hanya kepemilikan yang dilepas.
+    """
+    client = get_supabase_client()
+    if not client:
+        return None
+
+    try:
+        response = (
+            client.table("summaries")
+            .update({"user_id": None, "owner_username": None})
+            .eq("video_id", video_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+    except Exception as e:
+        logger.error(f"Error unassigning summary {video_id} from user {user_id}: {str(e)}")
+
+    return None
