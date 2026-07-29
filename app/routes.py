@@ -191,10 +191,6 @@ async def summarize(
     # 2. Cek Cache Supabase terlebih dahulu
     cached_record = get_summary_by_video_id(video_id, user_id)
     if cached_record:
-        if user_id and not cached_record.get("user_id"):
-            assign_summary_to_user(video_id, user_id)
-            cached_record["user_id"] = user_id
-
         return SummarizeResponse(
             id=cached_record.get("id"),
             video_id=video_id,
