@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 class RegisterRequest(BaseModel):
     email: str = Field(..., description="Email untuk pendaftaran akun", examples=["user@example.com"])
     password: str = Field(..., min_length=6, description="Password minimal 6 karakter")
+    username: str = Field(..., min_length=3, max_length=30, description="Username untuk profil publik", examples=["johndoe"])
 
 
 class LoginRequest(BaseModel):
@@ -15,6 +16,7 @@ class LoginRequest(BaseModel):
 class UserResponse(BaseModel):
     id: str = Field(description="UUID User dari Supabase Auth")
     email: str = Field(description="Email User")
+    username: str = Field(default="", description="Username publik")
 
 
 class AuthResponse(BaseModel):
@@ -35,6 +37,7 @@ class SummarizeRequest(BaseModel):
 
 
 class SummarizeResponse(BaseModel):
+    id: str | None = Field(default=None, description="ID summary dari database")
     video_id: str = Field(description="ID video YouTube")
     summary: str = Field(description="Hasil ringkasan dari transkrip video")
     transcript: str = Field(description="Transkrip mentah dari video YouTube")
@@ -49,6 +52,17 @@ class SummaryHistoryItem(BaseModel):
     summary: str = Field(description="Hasil ringkasan dari transkrip video")
     user_id: str | None = Field(default=None, description="UUID User pemilik ringkasan")
     created_at: str | None = Field(default=None, description="Timestamp pembuatan")
+
+
+class SummaryDetailResponse(BaseModel):
+    """Response untuk halaman detail ringkasan (publik). Tidak menyertakan transcript mentah."""
+    video_id: str = Field(description="ID video YouTube")
+    url: str = Field(description="URL video YouTube")
+    summary: str = Field(description="Hasil ringkasan dari transkrip video")
+    cached: bool = Field(default=True, description="Status apakah hasil diambil dari cache database")
+    owner_user_id: str | None = Field(default=None, description="UUID pemilik asli ringkasan")
+    owner_username: str = Field(default="", description="Username pemilik asli ringkasan")
+    is_owner: bool = Field(default=False, description="Apakah user yang mengakses adalah pemilik ringkasan ini")
 
 
 class SaveSummaryResponse(BaseModel):

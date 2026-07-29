@@ -9,6 +9,7 @@ from app.schemas import (
     UserResponse,
     SummarizeRequest,
     SummarizeResponse,
+    SummaryDetailResponse,
     SaveSummaryResponse,
     HistoryResponse,
     SummaryHistoryItem,
@@ -23,6 +24,7 @@ from app.services.supabase_client import (
     logout_user,
     get_summary_by_video_id,
     save_summary,
+    save_summary_for_user,
     assign_summary_to_user,
     get_all_summaries,
 )
@@ -43,7 +45,7 @@ router = APIRouter()
 )
 async def register(request: RegisterRequest):
     try:
-        res = register_user(request.email, request.password)
+        res = register_user(request.email, request.password, request.username)
         if not res or not res.user:
             raise HTTPException(
                 status_code=400,
@@ -59,7 +61,11 @@ async def register(request: RegisterRequest):
         return AuthResponse(
             access_token=access_token,
             refresh_token=refresh_token,
-            user=UserResponse(id=res.user.id, email=res.user.email or request.email),
+            user=UserResponse(
+                id=res.user.id,
+                email=res.user.email or request.email,
+                username=request.username,
+            ),
             message=msg,
         )
     except AuthApiError as e:
@@ -93,10 +99,18 @@ async def login(request: LoginRequest):
                 status_code=401,
                 detail="Email atau password salah.",
             )
+        # Ambil username dari user_metadata Supabase
+        metadata = getattr(res.user, 'user_metadata', {}) or {}
+        username = metadata.get('username', '')
+
         return AuthResponse(
             access_token=res.session.access_token,
             refresh_token=res.session.refresh_token,
-            user=UserResponse(id=res.user.id, email=res.user.email or request.email),
+            user=UserResponse(
+                id=res.user.id,
+                email=res.user.email or request.email,
+                username=username,
+            ),
             message="Login berhasil.",
         )
     except AuthApiError as e:
@@ -124,9 +138,11 @@ async def login(request: LoginRequest):
     tags=["Auth"],
 )
 async def get_me(current_user: Any = Depends(get_current_user)):
+    username = getattr(current_user, 'username', '') or ''
     return UserResponse(
         id=current_user.id,
         email=current_user.email or "",
+        username=username,
     )
 
 
@@ -170,15 +186,17 @@ async def summarize(
         )
 
     user_id = current_user.id if current_user else None
+    owner_username = getattr(current_user, 'username', '') if current_user else ''
 
     # 2. Cek Cache Supabase terlebih dahulu
-    cached_record = get_summary_by_video_id(video_id)
+    cached_record = get_summary_by_video_id(video_id, user_id)
     if cached_record:
         if user_id and not cached_record.get("user_id"):
             assign_summary_to_user(video_id, user_id)
             cached_record["user_id"] = user_id
 
         return SummarizeResponse(
+            id=cached_record.get("id"),
             video_id=video_id,
             summary=cached_record.get("summary", ""),
             transcript=cached_record.get("transcript", ""),
@@ -201,15 +219,19 @@ async def summarize(
         raise HTTPException(status_code=502, detail=str(e))
 
     # 5. Simpan ke Supabase untuk caching & histori
-    save_summary(
+    saved_record = save_summary(
         video_id=video_id,
         url=request.url,
         transcript=transcript,
         summary=summary,
         user_id=user_id,
+        owner_username=owner_username or '',
     )
 
+    summary_id = saved_record.get("id") if saved_record else None
+
     return SummarizeResponse(
+        id=summary_id,
         video_id=video_id,
         summary=summary,
         transcript=transcript,
@@ -236,7 +258,22 @@ async def save_summary_to_user_account(
             detail=f"Ringkasan untuk video_id '{video_id}' tidak ditemukan.",
         )
 
-    updated = assign_summary_to_user(video_id, current_user.id)
+    owner_username = getattr(current_user, 'username', '') or ''
+    
+    # Jika record tidak punya pemilik (dibuat oleh guest), assign ke user ini
+    if record.get("user_id") is None:
+        updated = assign_summary_to_user(video_id, current_user.id, owner_username)
+    else:
+        # Jika record dimiliki orang lain, buat copy baru untuk user ini
+        updated = save_summary_for_user(
+            video_id=video_id,
+            url=record.get("url", ""),
+            transcript=record.get("transcript", ""),
+            summary=record.get("summary", ""),
+            user_id=current_user.id,
+            owner_username=owner_username,
+        )
+
     if not updated:
         raise HTTPException(
             status_code=500,
@@ -279,24 +316,103 @@ async def get_history(
 
 @router.get(
     "/summaries/{video_id}",
-    response_model=SummarizeResponse,
-    summary="Ambil detail ringkasan berdasarkan video_id",
-    description="Mengambil data transkrip dan ringkasan yang tersimpan untuk video ID tertentu.",
+    response_model=SummaryDetailResponse,
+    summary="Ambil detail ringkasan berdasarkan video_id (publik)",
+    description="Mengambil ringkasan yang tersimpan untuk video ID tertentu. "
+    "Tidak memerlukan login. Menyertakan info kepemilikan jika token disertakan.",
     tags=["Summaries"],
 )
-async def get_summary_detail(video_id: str):
-    record = get_summary_by_video_id(video_id)
+async def get_summary_detail(
+    video_id: str,
+    current_user: Any | None = Depends(get_optional_current_user),
+):
+    user_id = current_user.id if current_user else None
+    record = get_summary_by_video_id(video_id, user_id)
     if not record:
         raise HTTPException(
             status_code=404,
             detail=f"Ringkasan untuk video_id '{video_id}' tidak ditemukan di database.",
         )
-    return SummarizeResponse(
+
+    # Tentukan status kepemilikan
+    owner_user_id = record.get("user_id")
+    is_owner = False
+    if current_user and owner_user_id:
+        is_owner = str(current_user.id) == str(owner_user_id)
+
+    # Kembalikan response TANPA transcript mentah
+    return SummaryDetailResponse(
         video_id=video_id,
+        url=record.get("url", ""),
         summary=record.get("summary", ""),
-        transcript=record.get("transcript", ""),
         cached=True,
-        user_id=record.get("user_id"),
+        owner_user_id=owner_user_id,
+        owner_username=record.get("owner_username", "") or "",
+        is_owner=is_owner,
     )
 
+
+@router.post(
+    "/summaries/{video_id}/reprocess",
+    response_model=SummarizeResponse,
+    summary="Proses ulang ringkasan video ke akun sendiri",
+    description="Mengambil transkrip dari YouTube dan membuat ringkasan baru "
+    "yang tersimpan sebagai milik user yang sedang login. "
+    "Tidak memindahkan kepemilikan data lama.",
+    tags=["Summaries"],
+)
+async def reprocess_summary(
+    video_id: str,
+    current_user: Any = Depends(get_current_user),
+):
+    # 1. Ambil URL dari record yang sudah ada (bisa record milik siapapun)
+    existing = get_summary_by_video_id(video_id)
+    if not existing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Ringkasan untuk video_id '{video_id}' tidak ditemukan.",
+        )
+
+    url = existing.get("url", "")
+    if not url:
+        raise HTTPException(
+            status_code=400,
+            detail="URL video tidak tersedia untuk diproses ulang.",
+        )
+
+    # 2. Fetch transcript dari YouTube
+    try:
+        transcript = get_transcript(video_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    # 3. Summarize ulang dengan Gemini AI
+    try:
+        summary = summarize_transcript(transcript)
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    # 4. Simpan sebagai record milik user ini (bukan menimpa record lama)
+    owner_username = getattr(current_user, 'username', '') or ''
+    saved_record = save_summary_for_user(
+        video_id=video_id,
+        url=url,
+        transcript=transcript,
+        summary=summary,
+        user_id=current_user.id,
+        owner_username=owner_username,
+    )
+
+    summary_id = saved_record.get("id") if saved_record else None
+
+    return SummarizeResponse(
+        id=summary_id,
+        video_id=video_id,
+        summary=summary,
+        transcript=transcript,
+        cached=False,
+        user_id=current_user.id,
+    )
 

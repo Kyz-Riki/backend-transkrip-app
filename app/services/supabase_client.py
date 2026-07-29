@@ -28,12 +28,16 @@ def get_supabase_client() -> Client | None:
         return None
 
 
-def register_user(email: str, password: str):
-    """Register user using Supabase Auth."""
+def register_user(email: str, password: str, username: str = ""):
+    """Register user using Supabase Auth with username in user_metadata."""
     client = get_supabase_client()
     if not client:
         raise RuntimeError("Supabase client belum dikonfigurasi. Periksa SUPABASE_URL dan SUPABASE_KEY.")
-    return client.auth.sign_up({"email": email, "password": password})
+    return client.auth.sign_up({
+        "email": email,
+        "password": password,
+        "options": {"data": {"username": username}},
+    })
 
 
 def login_user(email: str, password: str):
@@ -56,9 +60,10 @@ import jwt
 
 
 class SimpleUser:
-    def __init__(self, user_id: str, email: str = ""):
+    def __init__(self, user_id: str, email: str = "", username: str = ""):
         self.id = user_id
         self.email = email
+        self.username = username
 
 
 def get_user_from_token(token: str) -> Any | None:
@@ -74,8 +79,10 @@ def get_user_from_token(token: str) -> Any | None:
             )
             user_id = payload.get("sub")
             email = payload.get("email", "")
+            user_metadata = payload.get("user_metadata", {})
+            username = user_metadata.get("username", "") if isinstance(user_metadata, dict) else ""
             if user_id:
-                return SimpleUser(user_id=user_id, email=email)
+                return SimpleUser(user_id=user_id, email=email, username=username)
         except Exception as e:
             logger.warning(f"Verifikasi lokal JWT (SUPABASE_JWT_SECRET) gagal: {str(e)}. Fallback ke Supabase API.")
 
@@ -86,20 +93,38 @@ def get_user_from_token(token: str) -> Any | None:
     try:
         res = client.auth.get_user(jwt=token)
         if res and hasattr(res, "user") and res.user:
-            return res.user
+            user = res.user
+            # Wrap Supabase user agar memiliki atribut .username yang konsisten
+            metadata = getattr(user, "user_metadata", {}) or {}
+            username = metadata.get("username", "")
+            return SimpleUser(user_id=user.id, email=user.email or "", username=username)
     except Exception as e:
         logger.warning(f"Gagal verifikasi token Supabase Auth: {str(e)}")
 
     return None
 
 
-def get_summary_by_video_id(video_id: str) -> dict[str, Any] | None:
-    """Find existing summary in Supabase by video_id."""
+def get_summary_by_video_id(video_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+    """Find existing summary in Supabase by video_id (preferring the user's own if user_id is provided)."""
     client = get_supabase_client()
     if not client:
         return None
 
     try:
+        # First, try to find the user's own record if user_id is provided
+        if user_id:
+            response = (
+                client.table("summaries")
+                .select("*")
+                .eq("video_id", video_id)
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+            if response.data and len(response.data) > 0:
+                return response.data[0]
+
+        # If not found or no user_id, just get any record
         response = (
             client.table("summaries")
             .select("*")
@@ -116,7 +141,8 @@ def get_summary_by_video_id(video_id: str) -> dict[str, Any] | None:
 
 
 def save_summary(
-    video_id: str, url: str, transcript: str, summary: str, user_id: str | None = None
+    video_id: str, url: str, transcript: str, summary: str,
+    user_id: str | None = None, owner_username: str = "",
 ) -> dict[str, Any] | None:
     """Save or update summary record in Supabase."""
     client = get_supabase_client()
@@ -131,13 +157,31 @@ def save_summary(
     }
     if user_id:
         data["user_id"] = user_id
+    if owner_username:
+        data["owner_username"] = owner_username
 
     try:
-        response = (
-            client.table("summaries")
-            .upsert(data, on_conflict="video_id")
-            .execute()
-        )
+        # Manual check to avoid upsert on_conflict issues since unique constraint on video_id was removed
+        query = client.table("summaries").select("id").eq("video_id", video_id)
+        if user_id:
+            query = query.eq("user_id", user_id)
+        else:
+            query = query.is_("user_id", "null")
+            
+        existing = query.limit(1).execute()
+
+        if existing.data and len(existing.data) > 0:
+            # Update existing record
+            update_query = client.table("summaries").update(data).eq("video_id", video_id)
+            if user_id:
+                update_query = update_query.eq("user_id", user_id)
+            else:
+                update_query = update_query.is_("user_id", "null")
+            response = update_query.execute()
+        else:
+            # Insert new record
+            response = client.table("summaries").insert(data).execute()
+
         if response.data and len(response.data) > 0:
             return response.data[0]
     except Exception as e:
@@ -146,8 +190,8 @@ def save_summary(
     return None
 
 
-def assign_summary_to_user(video_id: str, user_id: str) -> dict[str, Any] | None:
-    """Assign an existing summary to a user_id."""
+def assign_summary_to_user(video_id: str, user_id: str, owner_username: str = "") -> dict[str, Any] | None:
+    """Assign an existing summary (that has no owner) to a user_id."""
     client = get_supabase_client()
     if not client:
         return None
@@ -155,8 +199,9 @@ def assign_summary_to_user(video_id: str, user_id: str) -> dict[str, Any] | None
     try:
         response = (
             client.table("summaries")
-            .update({"user_id": user_id})
+            .update({"user_id": user_id, "owner_username": owner_username})
             .eq("video_id", video_id)
+            .is_("user_id", "null")
             .execute()
         )
         if response.data and len(response.data) > 0:
@@ -183,4 +228,64 @@ def get_all_summaries(limit: int = 50, user_id: str | None = None) -> list[dict[
     except Exception as e:
         logger.error(f"Error fetching summary history from Supabase: {str(e)}")
         return []
+
+
+def save_summary_for_user(
+    video_id: str, url: str, transcript: str, summary: str,
+    user_id: str, owner_username: str = "",
+) -> dict[str, Any] | None:
+    """Save a new summary record specifically owned by a user (for reprocess flow).
+    
+    Berbeda dari save_summary biasa, fungsi ini selalu meng-insert record baru
+    untuk user tertentu. Jika user sudah punya record untuk video ini,
+    record tersebut di-update (bukan membuat duplikat).
+    """
+    client = get_supabase_client()
+    if not client:
+        return None
+
+    data = {
+        "video_id": video_id,
+        "url": url,
+        "transcript": transcript,
+        "summary": summary,
+        "user_id": user_id,
+        "owner_username": owner_username,
+    }
+
+    try:
+        # Cek apakah user sudah punya record untuk video ini
+        existing = (
+            client.table("summaries")
+            .select("id")
+            .eq("video_id", video_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+
+        if existing.data and len(existing.data) > 0:
+            # Update record yang sudah ada
+            response = (
+                client.table("summaries")
+                .update({"transcript": transcript, "summary": summary, "updated_at": "now()"})
+                .eq("video_id", video_id)
+                .eq("user_id", user_id)
+                .execute()
+            )
+        else:
+            # Insert record baru
+            response = (
+                client.table("summaries")
+                .insert(data)
+                .execute()
+            )
+
+        if response.data and len(response.data) > 0:
+            return response.data[0]
+    except Exception as e:
+        logger.error(f"Error saving reprocessed summary for user {user_id}, video {video_id}: {str(e)}")
+
+    return None
+
 
