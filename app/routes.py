@@ -1,6 +1,8 @@
 from typing import Any
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, Request, status
 from gotrue.errors import AuthApiError
+
+from app.rate_limiter import limiter, is_guest, is_logged_in, GUEST_LIMIT, USER_LIMIT
 
 from app.schemas import (
     RegisterRequest,
@@ -170,15 +172,19 @@ async def logout(current_user: Any = Depends(get_current_user)):
     response_model=SummarizeResponse,
     summary="Ringkas video YouTube",
     description="Menerima URL video YouTube, mengekstrak transkrip, "
-    "dan mengembalikan ringkasan menggunakan Gemini AI (dengan caching Supabase).",
+    "dan mengembalikan ringkasan menggunakan Gemini AI (dengan caching Supabase). "
+    "Rate limit: 5 request/jam (guest), 10 request/jam (user login).",
     tags=["Summaries"],
 )
+@limiter.limit(USER_LIMIT, exempt_when=is_guest)
+@limiter.limit(GUEST_LIMIT, exempt_when=is_logged_in)
 async def summarize(
-    request: SummarizeRequest,
+    request: Request,
+    payload: SummarizeRequest,
     current_user: Any | None = Depends(get_optional_current_user),
 ):
     # 1. Extract video ID
-    video_id = extract_video_id(request.url)
+    video_id = extract_video_id(payload.url)
     if not video_id:
         raise HTTPException(
             status_code=400,
@@ -218,7 +224,7 @@ async def summarize(
     # 5. Simpan ke Supabase untuk caching & histori
     saved_record = save_summary(
         video_id=video_id,
-        url=request.url,
+        url=payload.url,
         transcript=transcript,
         summary=summary,
         user_id=user_id,

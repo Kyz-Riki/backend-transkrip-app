@@ -1,0 +1,304 @@
+{
+  "info": {
+    "name": "YT Summarizer - API Test Collection",
+    "description": "Collection untuk testing functional, auth, dan security endpoint YT Transcript Summarizer. Set variable {{base_url}}, {{token_valid}}, {{token_other_user}}, dan {{video_id}} di tab Variables sebelum mulai.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "token_valid", "value": "" },
+    { "key": "token_other_user", "value": "" },
+    { "key": "video_id", "value": "dummy_video_id" },
+    { "key": "youtube_url", "value": "https://youtu.be/jlFLlizUpqw?si=_Sp97RBprFURffFy" },
+    { "key": "youtube_shorts_url", "value": "https://youtube.com/shorts/kttt68hkrDc?si=_AAzHwyFICcbedaD" },
+    { "key": "youtube_no_cc_url", "value": "https://youtu.be/APVHO1Solek?si=Y6Juje12KbwYsDR8" },
+    { "key": "youtube_private_url", "value": "https://youtube.com/shorts/xChMrBN7pqU?feature=share" },
+    { "key": "youtube_long_url", "value": "https://youtu.be/hufUGb8r9rU?si=1V3Y0b7cCtHCyKvU" }
+  ],
+  "item": [
+    {
+      "name": "1. Functional - Guest",
+      "item": [
+        {
+          "name": "Summarize - link valid (watch?v=)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{youtube_url}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Summarize - link Shorts",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{youtube_shorts_url}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Summarize - link invalid",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://example.com/not-a-youtube-link\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Summarize - url kosong",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Summarize - link sama 2x (cek cache)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{youtube_url}}\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Auth - Tanpa/Invalid Token",
+      "item": [
+        {
+          "name": "Save summary - tanpa token (harus 401)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/summaries/{{video_id}}/save"
+          }
+        },
+        {
+          "name": "Save summary - token asal-asalan (harus 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer token-ngasal-tidak-valid" }
+            ],
+            "url": "{{base_url}}/api/summaries/{{video_id}}/save"
+          }
+        },
+        {
+          "name": "Save summary - token di-tamper (ubah 1 karakter dari token valid, harus 401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_valid}}X" }
+            ],
+            "url": "{{base_url}}/api/summaries/{{video_id}}/save"
+          }
+        },
+        {
+          "name": "Get history - tanpa token (harus 401)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/history"
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Auth - Token Valid",
+      "item": [
+        {
+          "name": "Save summary - dengan token valid (harus 200)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_valid}}" }
+            ],
+            "url": "{{base_url}}/api/summaries/{{video_id}}/save"
+          }
+        },
+        {
+          "name": "Save summary - save video yang sama 2x (cek tidak duplikat)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_valid}}" }
+            ],
+            "url": "{{base_url}}/api/summaries/{{video_id}}/save"
+          }
+        },
+        {
+          "name": "Get history - dengan token valid (harus hanya milik sendiri)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_valid}}" }
+            ],
+            "url": "{{base_url}}/api/history"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Security - IDOR & Ownership",
+      "item": [
+        {
+          "name": "Get detail summary - sebagai guest (harus tampil, is_owner=false)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/summaries/{{video_id}}"
+          }
+        },
+        {
+          "name": "Get detail summary - sebagai user lain, bukan pemilik (is_owner=false)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_other_user}}" }
+            ],
+            "url": "{{base_url}}/api/summaries/{{video_id}}"
+          }
+        },
+        {
+          "name": "Get detail summary - sebagai pemilik (is_owner=true)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_valid}}" }
+            ],
+            "url": "{{base_url}}/api/summaries/{{video_id}}"
+          }
+        },
+        {
+          "name": "Cek transcript tidak bocor - response detail (manual check field 'transcript' harus tidak ada)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_other_user}}" }
+            ],
+            "url": "{{base_url}}/api/summaries/{{video_id}}"
+          }
+        },
+        {
+          "name": "User lain coba delete summary bukan miliknya (harus 403/404)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token_other_user}}" }
+            ],
+            "url": "{{base_url}}/api/summaries/{{video_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Rate Limiting",
+      "item": [
+        {
+          "name": "Summarize - request ke-1 (guest, tanpa token)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{youtube_url}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Summarize - ulangi manual sampai melebihi limit (harus 429 pada percobaan ke-N)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{youtube_url}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Summarize - dengan token login (limit harus lebih longgar dari guest)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_valid}}" }
+            ],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{youtube_url}}\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Edge Cases",
+      "item": [
+        {
+          "name": "Summarize - video tanpa transkrip/caption disabled",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{youtube_no_cc_url}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Summarize - video private/deleted",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{youtube_private_url}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Summarize - video sangat panjang (>1 jam, cek chunking)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base_url}}/api/summarize",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"{{youtube_long_url}}\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get detail summary - id tidak ada di database (harus 404)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/summaries/id-yang-tidak-ada"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "id": "e8d9a241-7c91-4c4f-9e79-8d4841e2a532",
+  "name": "YT Summarizer Local Env",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "token_valid",
+      "value": "isi_dengan_token_jwt_user_1",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "token_other_user",
+      "value": "isi_dengan_token_jwt_user_2",
+      "type": "secret",
+      "enabled": true
+    },
+    {
+      "key": "video_id",
+      "value": "dummy_video_id",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "youtube_url",
+      "value": "https://youtu.be/jlFLlizUpqw?si=_Sp97RBprFURffFy",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "youtube_shorts_url",
+      "value": "https://youtube.com/shorts/kttt68hkrDc?si=_AAzHwyFICcbedaD",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "youtube_no_cc_url",
+      "value": "https://youtu.be/APVHO1Solek?si=Y6Juje12KbwYsDR8",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "youtube_private_url",
+      "value": "https://youtube.com/shorts/xChMrBN7pqU?feature=share",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "youtube_long_url",
+      "value": "https://youtu.be/hufUGb8r9rU?si=1V3Y0b7cCtHCyKvU",
+      "type": "default",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "_postman_exported_at": "2026-07-28T13:00:00.000Z",
+  "_postman_exported_using": "Postman/10.0.0"
+}
